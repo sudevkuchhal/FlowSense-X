@@ -1,0 +1,288 @@
+#include "web_dashboard.h"
+
+#include <Arduino.h>
+#include <WebServer.h>
+#include <WiFi.h>
+
+#include "system.h"
+#include "wifi_manager.h"
+#include "esc.h"
+#include "motor.h"
+#include "constants.h"
+#include "rpm_sensor.h"
+#include "auto_peak.h"
+
+// ==========================================================
+// FlowSense-X
+// Web Dashboard
+//
+// The dashboard HTML is embedded directly in the firmware
+// (PROGMEM) so a single normal "Upload" in PlatformIO is
+// enough to get a working dashboard. No separate
+// "Upload Filesystem Image" step is required.
+// ==========================================================
+
+namespace
+{
+    WebServer server(80);
+    bool initialized = false;
+
+    const char DASHBOARD_HTML[] PROGMEM = R"FSXHTML(
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FlowSense-X Control Center</title>
+<style>
+:root{--bg:#070a12;--panel:#0e1422;--panel2:#131b2c;--line:#24324c;--text:#edf3ff;--muted:#8190ad;--cyan:#36c9ff;--green:#35e09b;--amber:#ffc857;--red:#ff6675;--purple:#a98bff;--blue:#668cff;--shadow:0 16px 45px #0006}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(900px 500px at 75% -10%,#16376a55,transparent),radial-gradient(700px 450px at -10% 30%,#1c174455,transparent),var(--bg);color:var(--text);font:14px/1.45 Inter,Segoe UI,system-ui,sans-serif}button,input,select{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 11px}button{cursor:pointer;font-weight:700}button:hover{border-color:var(--cyan)}button.primary{background:#0b7355;border-color:#22b982}button.danger{background:#761f2a;border-color:#d84b5b}button.warn{background:#6c4d0a;border-color:#d79d22}.wrap{max-width:1500px;margin:auto;padding:16px}.top{position:sticky;top:0;z-index:10;background:#080d17dd;backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}.topin{max-width:1500px;margin:auto;padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}.brand{font-size:19px;font-weight:900;letter-spacing:.3px}.brand span{color:var(--cyan)}.badge{padding:5px 10px;border:1px solid var(--line);border-radius:99px;font-size:11px;font-weight:900}.live{color:var(--green);border-color:#35e09b66}.off{color:var(--red);border-color:#ff667566}.demo{color:var(--amber);border-color:#ffc85766}.grow{flex:1}.small{font-size:11px;color:var(--muted)}nav{display:flex;gap:5px;overflow:auto;padding:10px 16px 0;max-width:1500px;margin:auto}nav button{border-radius:10px 10px 0 0;color:var(--muted);white-space:nowrap;border-bottom:0}nav button.on{color:var(--text);border-color:var(--cyan);background:var(--panel)}section{display:none}.active{display:block}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.card{background:linear-gradient(145deg,#101827,#111a2b);border:1px solid var(--line);border-radius:16px;padding:15px;box-shadow:var(--shadow)}.label{font-size:10px;color:var(--muted);letter-spacing:1.1px;text-transform:uppercase}.big{font-size:30px;font-weight:900;margin-top:4px}.unit{font-size:12px;color:var(--muted);font-weight:600}.meter{height:6px;background:#1c2740;border-radius:99px;overflow:hidden;margin-top:10px}.meter i{display:block;height:100%;width:0;background:var(--cyan);transition:width .25s}.two{display:grid;grid-template-columns:1.4fr .8fr;gap:12px;margin-top:12px}.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:12px}.row{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.control{margin-top:8px}.range{width:100%;accent-color:var(--cyan)}input[type=range]{width:100%}.valuebox{font-size:28px;font-weight:900}.phase{font-size:18px;font-weight:900;color:var(--cyan)}.steps{display:flex;gap:4px;align-items:flex-end;height:70px;margin-top:12px}.step{flex:1;background:#1b2944;border-radius:6px 6px 2px 2px;min-width:8px;position:relative}.step.on{background:#2cc98b}.step.current{outline:2px solid var(--cyan)}.step span{position:absolute;top:-17px;font-size:9px;color:var(--muted);left:50%;transform:translateX(-50%)}canvas{width:100%;height:310px;display:block}.legend{display:flex;gap:13px;flex-wrap:wrap;margin:9px 0;color:var(--muted);font-size:12px}.legend b{font-size:18px;vertical-align:-2px}.tablewrap{overflow:auto;max-height:440px;border:1px solid var(--line);border-radius:12px}table{border-collapse:collapse;width:100%;font-size:12px}th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}th{position:sticky;top:0;background:#111a2b;color:var(--muted)}.ok{color:var(--green)}.warntext{color:var(--amber)}.bad{color:var(--red)}.info{color:var(--cyan)}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}.flow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;align-items:stretch}.node{padding:13px;border:1px solid var(--line);background:var(--panel2);border-radius:12px}.node b{color:var(--cyan)}.node small{display:block;color:var(--muted);margin-top:4px}.sectiontitle{font-size:12px;color:var(--muted);letter-spacing:1.2px;text-transform:uppercase;margin:18px 0 8px}.notice{padding:10px 12px;border-left:3px solid var(--amber);background:#17170e;border-radius:8px}.dangerbox{padding:10px 12px;border-left:3px solid var(--red);background:#190e13;border-radius:8px}.successbox{padding:10px 12px;border-left:3px solid var(--green);background:#0c1713;border-radius:8px}.pillrow{display:flex;gap:7px;flex-wrap:wrap}.pill{padding:5px 9px;border:1px solid var(--line);border-radius:99px;color:var(--muted);font-size:11px}.footer{color:var(--muted);font-size:11px;padding:18px 2px}.right{text-align:right}.hidden{display:none}@media(max-width:1050px){.grid{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}.flow{grid-template-columns:1fr 1fr}}@media(max-width:620px){.wrap{padding:10px}.grid,.three{grid-template-columns:1fr}.topin{padding:10px}.big{font-size:25px}.flow{grid-template-columns:1fr}canvas{height:240px}}
+</style>
+</head>
+<body>
+<div class="top"><div class="topin"><div class="brand">Flow<span>Sense-X</span> <small>Control Center</small></div><div id="linkBadge" class="badge demo">OFFLINE</div><div class="small" id="clock"></div><div class="grow"></div><input id="ip" placeholder="ESP32 IP" size="18"><button id="connect">CONNECT</button><button id="demo">DEMO</button></div><nav id="nav"><button class="on" data-tab="overview">Overview</button><button data-tab="control">Control</button><button data-tab="auto">Auto Peak</button><button data-tab="history">History</button><button data-tab="safety">Safety & Events</button><button data-tab="iot">Firmware / IoT</button></nav></div>
+<div class="wrap">
+<section id="overview" class="active">
+<div class="grid" id="kpis"></div>
+<div class="two"><div class="card"><div class="row"><div><div class="label">Real-time motion telemetry</div><b>Measured vs target vs command</b></div><div class="grow"></div><span class="pill" id="sample">0 samples</span></div><div class="legend"><span><b style="color:#35e09b">●</b> Measured</span><span><b style="color:#a98bff">●</b> Target</span><span><b style="color:#36c9ff">●</b> Command</span><span><b style="color:#ffc857">●</b> Current</span></div><canvas id="chart"></canvas></div>
+<div class="card"><div class="label">Live safety state</div><div class="big" id="safe">—</div><div class="small" id="fault">No fault reported</div><div class="sectiontitle">IR RPM sensor</div><div class="row"><b id="irState">—</b><span class="pill" id="pulse">0 pulses</span></div><div class="sectiontitle">Motor state</div><div class="phase" id="motorState">IDLE</div><div class="small" id="event">No event</div></div></div>
+<div class="three"><div class="card"><div class="label">Voltage × Current</div><div class="big" id="power">0.0 <span class="unit">W</span></div><div class="small">Electrical power = measured V × A</div></div><div class="card"><div class="label">Wi-Fi / ESP32</div><div class="big" id="rssi">— <span class="unit">dBm</span></div><div class="small" id="heap">Heap —</div></div><div class="card"><div class="label">Session</div><div class="big" id="session">00:00:00</div><div class="small" id="rawCount">0 raw samples</div></div></div>
+</section>
+<section id="control">
+<div class="two"><div class="card"><div class="label">Manual motor command</div><div class="valuebox"><span id="rpmSet">0</span> <span class="unit">RPM</span></div><input id="rpmSlider" class="range" type="range" min="0" max="14000" step="100" value="0"><div class="row control"><button id="minus">−500</button><button id="plus">+500</button><button class="primary" id="start">START</button><button class="danger" id="stop">STOP</button><button class="danger" id="estop">EMERGENCY STOP</button></div><div class="small">Absolute target sent to firmware. Firmware still clamps to its safety limit.</div></div>
+<div class="card"><div class="label">Smooth-flow controller</div><div class="valuebox"><span id="smoothVal">1.00</span> <span class="unit">×</span></div><input id="smooth" class="range" type="range" min="0.25" max="1.50" step="0.05" value="1.00"><div class="row"><span class="pill">0.25 = gentle</span><span class="pill">1.00 = balanced</span><span class="pill">1.50 = faster</span></div><div class="sectiontitle">Ramp telemetry</div><div class="small" id="ramp">Base acceleration —</div></div></div>
+<div class="sectiontitle">Manual telemetry</div><div class="grid" id="manualCards"></div>
+</section>
+<section id="auto">
+<div class="two"><div class="card"><div class="label">Auto Peak sequence</div><div class="row"><div class="valuebox"><span id="autoPhase">IDLE</span></div><div class="grow"></div><span class="pill" id="autoRun">0 runs</span></div><div class="sectiontitle">Peak speed</div><div class="row"><input id="peak" type="number" min="1000" max="14000" step="100" value="14000"><span class="unit">RPM</span></div><div class="sectiontitle">Series step</div><div class="row"><input id="step" type="number" min="100" max="2000" step="100" value="500"><span class="unit">RPM</span></div><div class="row"><button class="primary" id="autoStart">START AUTO PEAK</button><button class="danger" id="autoStop">STOP AUTO</button></div></div>
+<div class="card"><div class="label">Timing profile</div><div class="row"><label>Ramp up <input id="up" type="number" min="1" max="120" step="1" value="12"> s</label><label>Peak hold <input id="hold" type="number" min="0" max="120" step="1" value="3"> s</label><label>Ramp down <input id="down" type="number" min="1" max="120" step="1" value="8"> s</label></div><div class="sectiontitle">Live auto telemetry</div><div class="pillrow"><span class="pill">Target <b id="autoTarget">0</b> RPM</span><span class="pill">Peak <b id="autoPeak">14000</b> RPM</span><span class="pill">Hold <b id="holdLeft">0</b> ms</span></div><div class="steps" id="steps"></div><div class="small">The sequence visualizer shows the programmed target path. Actual RPM remains IR-derived.</div></div></div>
+<div class="card" style="margin-top:12px"><div class="label">Auto Peak history</div><div class="tablewrap"><table id="autoTable"></table></div></div>
+</section>
+<section id="history"><div class="row"><button id="exportRaw">EXPORT RAW CSV</button><button id="exportEvents">EXPORT EVENTS CSV</button><button id="exportJson">EXPORT JSON</button><button id="clearHistory">CLEAR LOCAL HISTORY</button><span class="small" id="histInfo"></span></div><div class="two"><div class="card"><div class="label">Raw telemetry</div><div class="tablewrap"><table id="rawTable"></table></div></div><div class="card"><div class="label">Minute summary</div><div class="tablewrap"><table id="minuteTable"></table></div></div></div></section>
+<section id="safety"><div class="two"><div class="card"><div class="label">Safety diagnostics</div><div id="safetyBox" class="successbox">Waiting for telemetry</div><div class="sectiontitle">Protection chain</div><div class="flow"><div class="node"><b>IR RPM</b><small>Physical black-marker feedback</small></div><div class="node"><b>Current</b><small>ACS712 calibrated measurement</small></div><div class="node"><b>Voltage</b><small>25 V divider telemetry</small></div><div class="node"><b>Safety</b><small>Current / overspeed / command checks</small></div><div class="node"><b>ESC</b><small>Final 1000–2000 µs clamp</small></div></div></div><div class="card"><div class="label">Event log</div><div class="tablewrap"><table id="eventTable"></table></div></div></div></section>
+<section id="iot"><div class="card"><div class="label">Firmware → Wi-Fi → Dashboard data path</div><div class="flow"><div class="node"><b>Hardware</b><small>IR GPIO33 · ACS712 GPIO34 · Voltage GPIO35 · ESC GPIO18 · OLED I²C</small></div><div class="node"><b>ESP32 firmware</b><small>RPM ISR · current calibration · voltage · adaptive ramp · safety · Auto Peak</small></div><div class="node"><b>HTTP API</b><small>/api/status · /api/speed · /api/start · /api/stop · /api/auto/* · /api/config</small></div><div class="node"><b>Frontend</b><small>Live charts · controls · history · events · auto profile</small></div><div class="node"><b>Storage</b><small>Browser localStorage + CSV/JSON export</small></div></div><div class="sectiontitle">Firmware / network</div><div class="grid" id="sysCards"></div><div class="sectiontitle">Pin map</div><div class="tablewrap"><table id="pinTable"></table></div><div class="sectiontitle">Backend API contract</div><div class="tablewrap"><table id="apiTable"></table></div></div></section>
+<div class="footer">FlowSense-X Control Center · No RPM values are estimated from ESC PWM. Live RPM is expected from the physical IR sensor.</div>
+</div>
+<script>
+const $=id=>document.getElementById(id);const MAX=14000;let mode='offline',base='',last=null,history=[],events=[],autoRuns=[],fails=0,started=Date.now(),timer=null;let cfg={peak:14000,step:500,hold:3,up:12,down:8,smooth:1};
+try{history=JSON.parse(localStorage.fsx_raw||'[]');events=JSON.parse(localStorage.fsx_events||'[]');autoRuns=JSON.parse(localStorage.fsx_auto||'[]');cfg=Object.assign(cfg,JSON.parse(localStorage.fsx_cfg||'{}'));$('ip').value=localStorage.fsx_ip||''}catch(e){}
+const f=(n,d=0)=>Number(n||0).toFixed(d),now=()=>new Date().toLocaleTimeString();function setMode(m){mode=m;const b=$('linkBadge');b.className='badge '+(m==='live'?'live':m==='demo'?'demo':'off');b.textContent=m==='live'?'LIVE · WiFi':m==='demo'?'DEMO':'OFFLINE'}
+function log(type,msg){events.unshift({t:Date.now(),type,msg});events=events.slice(0,1000);try{localStorage.fsx_events=JSON.stringify(events)}catch(e){}}
+async function api(path){const c=new AbortController(),to=setTimeout(()=>c.abort(),1800);try{const r=await fetch(base+path,{cache:'no-store',signal:c.signal});if(!r.ok)throw Error(r.status);return await r.json().catch(()=>({ok:true}))}finally{clearTimeout(to)}}
+async function cmd(path){if(mode==='live'){try{return await api(path)}catch(e){log('ERROR','Command failed '+path);return null}}if(mode==='demo'){return demoCmd(path)}return null}
+function demoCmd(path){if(path.includes('/api/speed'))last=last||demoData();if(path.includes('/api/stop'))last.target=0;if(path.includes('/api/start'))last.target=Math.max(last.target||0,2000);if(path.includes('/api/auto/start')){last.autoMode=true;last.autoPhase='RAMP UP';last.target=0}if(path.includes('/api/auto/stop')){last.autoMode=false;last.autoPhase='IDLE';last.target=0}return {ok:true}}
+function demoData(){return{voltage:12.1,current:5.2,rpm:5600,target:6000,command:5800,esc:1400,state:'RUNNING',safety:'SAFE',fault:'NONE',event:'NONE',irValid:true,irSignal:true,pulseCount:94,pps:93,autoMode:false,autoPhase:'IDLE',autoTarget:0,peakRpm:14000,holdRemainingMs:0,runCount:0,rssi:-48,freeHeap:190000,uptimeMs:50000,ip:'192.168.4.1',smooth:1}}
+function connect(){let v=$('ip').value.trim().replace(/^https?:\/\//,'').replace(/\/$/,'');if(!v)return;base='http://'+v;localStorage.fsx_ip=v;fails=0;setMode('live');log('LINK','Connecting to '+base);tick()}
+$('connect').onclick=connect;$('demo').onclick=()=>{setMode('demo');if(!last)last=demoData();log('LINK','Demo mode enabled');render()};
+function setSlider(v){v=Math.max(0,Math.min(MAX,Number(v)));$('rpmSlider').value=v;$('rpmSet').textContent=Math.round(v)}
+$('rpmSlider').oninput=e=>{$('rpmSet').textContent=Math.round(e.target.value);clearTimeout(window.sv);window.sv=setTimeout(()=>cmd('/api/rpm?value='+e.target.value),120)};
+$('minus').onclick=()=>setSlider(Number($('rpmSlider').value)-500);$('plus').onclick=()=>setSlider(Number($('rpmSlider').value)+500);$('start').onclick=()=>{cmd('/api/start');log('CMD','Manual START')};$('stop').onclick=()=>{cmd('/api/stop');setSlider(0);log('CMD','STOP')};$('estop').onclick=()=>{cmd('/api/emergency?value=1');setSlider(0);log('CMD','EMERGENCY STOP')};
+$('smooth').oninput=e=>{$('smoothVal').textContent=Number(e.target.value).toFixed(2);cfg.smooth=Number(e.target.value);saveCfg();clearTimeout(window.sm);window.sm=setTimeout(()=>sendConfig(),250)};
+function saveCfg(){try{localStorage.fsx_cfg=JSON.stringify(cfg)}catch(e){}}
+function readCfg(){cfg.peak=+$('peak').value;cfg.step=+$('step').value;cfg.up=+$('up').value;cfg.hold=+$('hold').value;cfg.down=+$('down').value;cfg.smooth=+$('smooth').value;saveCfg()}
+async function sendConfig(){readCfg();if(mode==='live')await cmd('/api/config?peak='+cfg.peak+'&step='+cfg.step+'&hold='+cfg.hold+'&up='+cfg.up+'&down='+cfg.down+'&smooth='+cfg.smooth)}
+$('autoStart').onclick=async()=>{await sendConfig();await cmd('/api/auto/start');autoRuns.unshift({t:Date.now(),peak:cfg.peak,up:cfg.up,hold:cfg.hold,down:cfg.down,smooth:cfg.smooth,result:'Started'});autoRuns=autoRuns.slice(0,50);try{localStorage.fsx_auto=JSON.stringify(autoRuns)}catch(e){};renderAutoTable();log('AUTO','Auto Peak started → '+cfg.peak+' RPM')};$('autoStop').onclick=async()=>{await cmd('/api/auto/stop');log('AUTO','Auto Peak stopped')};
+function renderKpis(d){const data=[['Measured RPM',f(d.rpm), '', d.rpm/MAX*100,'#35e09b'],['Target RPM',f(d.target),'',d.target/MAX*100,'#a98bff'],['Command RPM',f(d.command),'',d.command/MAX*100,'#36c9ff'],['Current',f(d.current,2),'A',d.current/20*100,'#ff6675'],['Voltage',f(d.voltage,2),'V',d.voltage/13*100,'#ffc857'],['Power',f(d.power,1),'W',Math.min(100,d.power/250*100),'#ffc857'],['ESC Pulse',f(d.esc),'µs',(d.esc-1000)/10,'#36c9ff'],['IR Sensor',d.irSignal?'SIGNAL OK':(d.irValid?'NO SIGNAL':'SENSOR ERROR'),' ',d.irSignal?100:d.irValid?35:5,d.irSignal?'#35e09b':'#ff6675']];$('kpis').innerHTML=data.map(x=>`<div class="card"><div class="label">${x[0]}</div><div class="big">${x[1]} <span class="unit">${x[2]}</span></div><div class="meter"><i style="width:${Math.max(0,Math.min(100,x[3]))}%;background:${x[4]}"></i></div></div>`).join('')}
+function draw(){const c=$('chart'),r=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*r;c.height=h*r;const x=c.getContext('2d');x.scale(r,r);x.clearRect(0,0,w,h);x.strokeStyle='#24324c';x.fillStyle='#8190ad';x.font='11px system-ui';for(let i=0;i<5;i++){let y=10+(h-30)*i/4;x.beginPath();x.moveTo(40,y);x.lineTo(w,y);x.stroke();x.fillText(Math.round(MAX*(1-i/4)),4,y+4)}let p=history.slice(-180);if(p.length<2)return;const lines=[['rpm','#35e09b','rpm'],['target','#a98bff','target'],['command','#36c9ff','command'],['current','#ffc857','current']];lines.forEach(([key,col,k])=>{x.strokeStyle=col;x.lineWidth=2;x.beginPath();p.forEach((d,i)=>{let v=k==='current'?d[k]/20:d[k]/MAX;let X=40+(w-45)*i/(p.length-1),Y=10+(h-30)*(1-Math.max(0,Math.min(1,v)));i?x.lineTo(X,Y):x.moveTo(X,Y)});x.stroke()})}
+function render(d){if(!d)return;d.voltage=+d.voltage||0;d.current=+d.current||0;d.rpm=+d.rpm||0;d.target=+d.target||0;d.command=+d.command||0;d.esc=+d.esc||1000;d.power=d.voltage*d.current;last=d;history.push(Object.assign({t:Date.now()},d));if(history.length>7200)history.shift();try{localStorage.fsx_raw=JSON.stringify(history)}catch(e){}renderKpis(d);$('safe').textContent=d.safety||'—';$('safe').className='big '+((d.safety||'')==='SAFE'?'ok':'bad');$('fault').textContent=(d.fault||'NONE')+' · '+(d.event||'NONE');$('irState').textContent=d.irSignal?'SIGNAL OK':d.irValid?'NO SIGNAL':'SENSOR ERROR';$('irState').className=d.irSignal?'ok':'bad';$('pulse').textContent=(d.pulseCount||0)+' pulses · '+(d.pps||0)+' pps';$('motorState').textContent=d.state||'IDLE';$('event').textContent=d.event||'NONE';$('power').innerHTML=f(d.power,1)+' <span class="unit">W</span>';$('rssi').innerHTML=(d.rssi??'—')+' <span class="unit">dBm</span>';$('heap').textContent='Heap '+(d.freeHeap||0)+' B';$('sample').textContent=history.length+' samples';$('rawCount').textContent=history.length+' raw samples stored';$('ramp').textContent='Smooth '+f(d.smooth,2)+'× · firmware adaptive ramp';$('autoPhase').textContent=d.autoPhase||'IDLE';$('autoRun').textContent=(d.runCount||0)+' runs';$('autoTarget').textContent=Math.round(d.autoTarget||0);$('autoPeak').textContent=Math.round(d.peakRpm||cfg.peak);$('holdLeft').textContent=d.holdRemainingMs||0;draw();renderHistory();renderEvents();renderIoT(d);renderAutoSteps(d)}
+function renderAutoSteps(d){const peak=Math.max(1000,d.peakRpm||cfg.peak);let n=Math.min(15,Math.max(5,Math.ceil(peak/1000)));$('steps').innerHTML=Array.from({length:n},(_,i)=>{let v=Math.round((i+1)*peak/n),on=(d.autoTarget||0)>=v*.97,cur=Math.abs((d.autoTarget||0)-v)<peak/n*.55;return `<div class="step ${on?'on':''} ${cur?'current':''}" style="height:${20+70*(v/peak)}%"><span>${Math.round(v/1000)}k</span></div>`}).join('')}
+function renderHistory(){let p=history.slice(-80).reverse();$('rawTable').innerHTML='<tr><th>Time</th><th>RPM</th><th>Target</th><th>Command</th><th>A</th><th>V</th><th>W</th><th>ESC</th><th>State</th><th>IR</th></tr>'+p.map(d=>`<tr><td>${new Date(d.t).toLocaleTimeString()}</td><td>${Math.round(d.rpm)}</td><td>${Math.round(d.target)}</td><td>${Math.round(d.command)}</td><td>${f(d.current,2)}</td><td>${f(d.voltage,2)}</td><td>${f(d.voltage*d.current,1)}</td><td>${d.esc}</td><td>${d.state||''}</td><td>${d.irSignal?'OK':'NO'}</td></tr>`).join('');let mins={};history.forEach(d=>{let k=Math.floor(d.t/60000)*60000;let m=mins[k]||(mins[k]={n:0,r:0,rm:0,a:0,am:0,w:0});m.n++;m.r+=d.rpm;m.rm=Math.max(m.rm,d.rpm);m.a+=d.current;m.am=Math.max(m.am,d.current);m.w+=d.voltage*d.current/120000});let ks=Object.keys(mins).sort((a,b)=>b-a).slice(0,120);$('minuteTable').innerHTML='<tr><th>Minute</th><th>N</th><th>RPM avg</th><th>RPM max</th><th>A avg</th><th>A max</th><th>Wh</th></tr>'+ks.map(k=>{let m=mins[k];return`<tr><td>${new Date(+k).toLocaleString()}</td><td>${m.n}</td><td>${Math.round(m.r/m.n)}</td><td>${Math.round(m.rm)}</td><td>${f(m.a/m.n,2)}</td><td>${f(m.am,2)}</td><td>${f(m.w,4)}</td></tr>`}).join('');$('histInfo').textContent=history.length+' raw samples · '+events.length+' events'}
+function renderEvents(){$('eventTable').innerHTML='<tr><th>Time</th><th>Type</th><th>Message</th></tr>'+events.slice(0,200).map(e=>`<tr><td>${new Date(e.t).toLocaleString()}</td><td class="${e.type==='ERROR'||e.type==='SAFETY'?'bad':e.type==='CMD'||e.type==='AUTO'?'warntext':'info'}">${e.type}</td><td>${e.msg}</td></tr>`).join('')}
+function renderAutoTable(){let a=autoRuns.slice(0,50);$('autoTable').innerHTML='<tr><th>Run</th><th>Peak</th><th>Ramp Up</th><th>Hold</th><th>Ramp Down</th><th>Smooth</th><th>Result</th></tr>'+a.map(x=>`<tr><td>${new Date(x.t).toLocaleString()}</td><td>${x.peak}</td><td>${x.up}s</td><td>${x.hold}s</td><td>${x.down}s</td><td>${x.smooth}×</td><td>${x.result||'Started'}</td></tr>`).join('')}
+function renderIoT(d){$('sysCards').innerHTML=[['IP',d.ip||'—'],['RSSI',(d.rssi??'—')+' dBm'],['Free heap',(d.freeHeap||0)+' B'],['Uptime',Math.round((d.uptimeMs||0)/1000)+' s']].map(x=>`<div class="card"><div class="label">${x[0]}</div><div class="big" style="font-size:22px">${x[1]}</div></div>`).join('');$('pinTable').innerHTML='<tr><th>Function</th><th>GPIO</th><th>Source / destination</th></tr>'+[['OLED SDA','21','SSD1306 I²C'],['OLED SCL','22','SSD1306 I²C'],['ESC','18','ESC signal'],['IR RPM','33','Black marker sensor'],['ACS712','34','Current sensor'],['Voltage','35','0–25 V module'],['UP','25','Button'],['DOWN','26','Button'],['MODE','27','Button']].map(x=>`<tr><td>${x[0]}</td><td>${x[1]}</td><td>${x[2]}</td></tr>`).join('');$('apiTable').innerHTML='<tr><th>Endpoint</th><th>Purpose</th></tr>'+[['/api/status','Full live telemetry + IR + Auto Peak + IoT'],['/api/rpm?value=','Absolute manual target RPM'],['/api/speed?value=','0–100% manual target'],['/api/start','Start at current/configured target'],['/api/stop','Smooth target stop'],['/api/emergency?value=1','Emergency stop request'],['/api/auto/start','Firmware Auto Peak'],['/api/auto/stop','Stop Auto Peak'],['/api/config?...','Peak, step, hold, ramp and smooth settings'],['/api/info','Uptime, RSSI, heap and IP']].map(x=>`<tr><td class="mono">${x[0]}</td><td>${x[1]}</td></tr>`).join('')}
+async function tick(){let d=null;if(mode==='demo'){d=demoData();d.rpm=(d.rpm+Math.sin(Date.now()/1000)*500);d.target=7000+Math.sin(Date.now()/1600)*2500;d.command=d.target;d.current=3+Math.max(0,d.rpm)/MAX*13;d.voltage=12.3-d.current*.04;d.power=d.current*d.voltage;d.pulseCount=Math.round(Date.now()/500);d.pps=Math.round(d.rpm/60);d.rssi=-48;d.freeHeap=188000}else if(mode==='live'){try{d=await api('/api/status');fails=0}catch(e){if(++fails>=3){setMode('offline');log('ERROR','ESP32 link lost')}}}if(d)render(d)}
+function exportFile(name,text,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click()}
+$('exportRaw').onclick=()=>exportFile('flowsense_raw.csv','time,rpm,target,command,current,voltage,power,esc,state,ir\\n'+history.map(d=>[new Date(d.t).toISOString(),Math.round(d.rpm),Math.round(d.target),Math.round(d.command),f(d.current,3),f(d.voltage,3),f(d.voltage*d.current,2),d.esc,d.state,d.irSignal?'OK':'NO'].join(',')).join('\\n'),'text/csv');$('exportEvents').onclick=()=>exportFile('flowsense_events.csv','time,type,message\\n'+events.map(e=>[new Date(e.t).toISOString(),e.type,'"'+String(e.msg).replaceAll('"','""')+'"'].join(',')).join('\\n'),'text/csv');$('exportJson').onclick=()=>exportFile('flowsense_session.json',JSON.stringify({history,events,autoRuns,cfg},null,2),'application/json');$('clearHistory').onclick=()=>{if(confirm('Clear browser history?')){history=[];events=[];autoRuns=[];localStorage.removeItem('fsx_raw');localStorage.removeItem('fsx_events');localStorage.removeItem('fsx_auto');render(last)}};
+document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('on'));document.querySelectorAll('section').forEach(x=>x.classList.remove('active'));b.classList.add('on');$(b.dataset.tab).classList.add('active');if(b.dataset.tab==='auto')renderAutoTable()});
+function initCfg(){['peak','step'].forEach(k=>$(k).value=cfg[k]);['up','hold','down'].forEach(k=>$(k).value=cfg[k]);$('smooth').value=cfg.smooth;$('smoothVal').textContent=f(cfg.smooth,2)}initCfg();renderAutoTable();setMode('offline');setInterval(()=>{$('clock').textContent=now()},1000);setInterval(tick,500);window.addEventListener('resize',draw);tick();
+</script>
+</body></html>
+
+)FSXHTML";
+
+    const char* stateToString(SystemState state)
+    {
+        switch (state)
+        {
+            case SystemState::Idle:          return "IDLE";
+            case SystemState::Running:       return "RUNNING";
+            case SystemState::Warning:       return "WARNING";
+            case SystemState::Fault:         return "FAULT";
+            case SystemState::EmergencyStop: return "EMERGENCY";
+            default:                         return "UNKNOWN";
+        }
+    }
+
+    void addCors()
+    {
+        server.sendHeader("Access-Control-Allow-Origin", "*");
+        server.sendHeader("Cache-Control", "no-store");
+    }
+
+    void handleRoot()
+    {
+        addCors();
+        server.send_P(200, "text/html", DASHBOARD_HTML);
+    }
+
+    void handleStatus()
+    {
+        const SystemStatus status = systemGetStatus();
+        const RpmSensorState ir = rpmSensorGetState();
+        const AutoPeakStatus ap = autoPeakGetStatus();
+        const AutoPeakConfig ac = autoPeakGetConfig();
+
+        String json;
+        json.reserve(1200);
+        json += "{";
+        json += "\"voltage\":"; json += String(status.voltageV, 2);
+        json += ",\"current\":"; json += String(status.currentA, 2);
+        json += ",\"power\":"; json += String(status.voltageV * status.currentA, 2);
+        json += ",\"rpm\":"; json += String(status.measuredRpm, 0);
+        json += ",\"target\":"; json += String(status.targetRpm, 0);
+        json += ",\"command\":"; json += String(status.commandRpm, 0);
+        json += ",\"esc\":"; json += String(status.escPulseUs);
+        json += ",\"requestedEsc\":"; json += String(status.requestedEscPulseUs);
+        json += ",\"state\":\""; json += stateToString(status.state); json += "\"";
+        json += ",\"safety\":\""; json += (status.safetyAllowed ? "SAFE" : "BLOCKED"); json += "\"";
+        json += ",\"fault\":\""; json += faultCodeToString(status.fault); json += "\"";
+        json += ",\"event\":\""; json += eventTypeToString(status.eventType); json += "\"";
+        json += ",\"irValid\":"; json += (ir.valid ? "true" : "false");
+        json += ",\"irSignal\":"; json += (ir.signalPresent ? "true" : "false");
+        json += ",\"pulseCount\":"; json += String(ir.pulseCount);
+        json += ",\"pps\":"; json += String(ir.pulsesPerSecond);
+        json += ",\"autoMode\":"; json += (ap.active ? "true" : "false");
+        json += ",\"autoPhase\":\""; json += autoPeakPhaseToString(ap.phase); json += "\"";
+        json += ",\"autoTarget\":"; json += String(ap.targetRpm, 0);
+        json += ",\"peakRpm\":"; json += String(ac.peakRpm, 0);
+        json += ",\"holdRemainingMs\":"; json += String(ap.holdRemainingMs);
+        json += ",\"runCount\":"; json += String(ap.runCount);
+        json += ",\"smooth\":"; json += String(ac.smoothFactor, 2);
+        json += ",\"uptimeMs\":"; json += String(millis());
+        json += ",\"rssi\":"; json += String(WiFi.RSSI());
+        json += ",\"freeHeap\":"; json += String(ESP.getFreeHeap());
+        json += ",\"ip\":\""; json += wifiGetIP(); json += "\"";
+        json += "}";
+        addCors();
+        server.send(200, "application/json", json);
+    }
+
+    void handleSpeed()
+    {
+        if (!server.hasArg("value")) { addCors(); server.send(400, "text/plain", "Missing speed value"); return; }
+        float percent = constrain(server.arg("value").toFloat(), 0.0f, 100.0f);
+        systemSetTargetRpm((percent / 100.0f) * MOTOR_MAX_RPM);
+        autoPeakStop();
+        addCors(); server.send(200, "application/json", "{\"ok\":true}");
+    }
+
+    void handleRpm()
+    {
+        if (!server.hasArg("value")) { addCors(); server.send(400, "text/plain", "Missing RPM value"); return; }
+        float rpm = constrain(server.arg("value").toFloat(), MOTOR_MIN_RPM, MAX_SAFE_RPM);
+        systemSetTargetRpm(rpm);
+        autoPeakStop();
+        addCors(); server.send(200, "application/json", "{\"ok\":true}");
+    }
+
+    void handleStart()
+    {
+        float target = systemGetStatus().targetRpm;
+        if (target <= MOTOR_MIN_RPM) target = DEFAULT_START_TARGET_RPM;
+        if (target <= MOTOR_MIN_RPM) target = RPM_TARGET_STEP;
+        systemSetTargetRpm(target);
+        addCors(); server.send(200, "application/json", "{\"ok\":true}");
+    }
+
+    void handleStop()
+    {
+        autoPeakStop();
+        systemSetTargetRpm(0.0f);
+        systemRequestEmergencyStop(false);
+        motorStop();
+        systemSetActualEscPulse(ESC_MIN_US);
+        addCors(); server.send(200, "application/json", "{\"ok\":true}");
+    }
+
+    void handleEmergency()
+    {
+        const bool request = !server.hasArg("value") || server.arg("value") != "0";
+        if (request) { autoPeakStop(); systemRequestEmergencyStop(true); motorStop(); systemSetActualEscPulse(ESC_MIN_US); }
+        else systemRequestEmergencyStop(false);
+        addCors(); server.send(200, "application/json", request ? "{\"ok\":true,\"emergency\":true}" : "{\"ok\":true,\"emergency\":false}");
+    }
+
+    void handleAutoStart()
+    {
+        autoPeakStart();
+        addCors(); server.send(200, "application/json", "{\"ok\":true}");
+    }
+
+    void handleAutoStop()
+    {
+        autoPeakStop();
+        addCors(); server.send(200, "application/json", "{\"ok\":true}");
+    }
+
+    void handleConfig()
+    {
+        AutoPeakConfig c = autoPeakGetConfig();
+        if (server.hasArg("peak")) c.peakRpm = server.arg("peak").toFloat();
+        if (server.hasArg("step")) c.stepRpm = server.arg("step").toFloat();
+        if (server.hasArg("hold")) c.holdMs = static_cast<uint32_t>(server.arg("hold").toFloat() * 1000.0f);
+        if (server.hasArg("up")) c.rampUpMs = static_cast<uint32_t>(server.arg("up").toFloat() * 1000.0f);
+        if (server.hasArg("down")) c.rampDownMs = static_cast<uint32_t>(server.arg("down").toFloat() * 1000.0f);
+        if (server.hasArg("smooth")) c.smoothFactor = server.arg("smooth").toFloat();
+        autoPeakSetConfig(c);
+        c = autoPeakGetConfig();
+        String json = "{\"peak\":" + String(c.peakRpm,0) + ",\"step\":" + String(c.stepRpm,0) + ",\"hold\":" + String(c.holdMs/1000.0f,1) + ",\"up\":" + String(c.rampUpMs/1000.0f,1) + ",\"down\":" + String(c.rampDownMs/1000.0f,1) + ",\"smooth\":" + String(c.smoothFactor,2) + "}";
+        addCors(); server.send(200, "application/json", json);
+    }
+
+    void handleInfo()
+    {
+        String json = "{\"uptimeMs\":" + String(millis()) + ",\"rssi\":" + String(WiFi.RSSI()) + ",\"freeHeap\":" + String(ESP.getFreeHeap()) + ",\"ip\":\"" + wifiGetIP() + "\"}";
+        addCors(); server.send(200, "application/json", json);
+    }
+
+}
+
+void webDashboardInit()
+{
+    if (initialized)
+        return;
+
+    server.on("/", HTTP_GET, handleRoot);
+    server.on("/index.html", HTTP_GET, handleRoot);
+    server.on("/flowsense-dashboard.html", HTTP_GET, handleRoot);
+    server.on("/api/status", HTTP_GET, handleStatus);
+    server.on("/api/speed", HTTP_GET, handleSpeed);
+    server.on("/api/rpm", HTTP_GET, handleRpm);
+    server.on("/api/start", HTTP_GET, handleStart);
+    server.on("/api/stop", HTTP_GET, handleStop);
+    server.on("/api/emergency", HTTP_GET, handleEmergency);
+    server.on("/api/auto/start", HTTP_GET, handleAutoStart);
+    server.on("/api/auto/stop", HTTP_GET, handleAutoStop);
+    server.on("/api/config", HTTP_GET, handleConfig);
+    server.on("/api/info", HTTP_GET, handleInfo);
+
+    server.onNotFound([]()
+    {
+        addCors();
+        server.send(404, "text/plain", "Not Found");
+    });
+
+    server.begin();
+    initialized = true;
+
+    Serial.println("[WEB] Dashboard started (embedded HTML, no LittleFS upload needed)");
+    Serial.print("[WEB] Open: http://");
+    Serial.println(wifiGetIP());
+}
+
+void webDashboardUpdate()
+{
+    if (initialized)
+    {
+        server.handleClient();
+    }
+}
