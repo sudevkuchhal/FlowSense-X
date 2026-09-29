@@ -1,63 +1,84 @@
-# FlowSense-X Control Center — Enhanced Build
+# FlowSense-X
 
-This build keeps the existing ESP32/ESC/current/voltage/OLED architecture and adds a premium browser dashboard plus firmware-side telemetry and Auto Peak control.
+## ESP32-Based Intelligent Motion Quality Controller
 
-## Hardware
-- ESP32 DevKit V1
-- A2212 1000KV BLDC + ESC
-- IR reflective RPM sensor on GPIO33, one black marker/revolution
-- ACS712-20A on GPIO34
-- 0–25 V voltage sensor on GPIO35
-- ESC signal GPIO18
-- SSD1306 OLED: SDA 21 / SCL 22
+FlowSense-X is an ESP32-based BLDC motor control and monitoring system designed around an ESC-driven A2212 1000KV motor.
 
-## Dashboard
-The dashboard is embedded in firmware, so use a normal PlatformIO firmware upload. **Do not use `uploadfs` for this dashboard.**
+The system combines firmware-based motor control, adaptive motion control, electrical telemetry, OLED monitoring, Wi-Fi connectivity, a browser dashboard, safety handling, and Auto Peak motion profiles.
 
-Features:
-- Live measured/target/command RPM
-- Voltage, current and calculated electrical power
-- ESC pulse telemetry
-- IR sensor state, pulse count and pulses/second
-- Manual absolute-RPM control
-- Smooth-flow factor 0.25×–1.50×
-- Auto Peak state machine: RAMP UP → PEAK APPROACH → PEAK HOLD → RAMP DOWN → STOP → IDLE
-- Configurable peak, series step, ramp-up, hold and ramp-down
-- Real-time canvas chart
-- Browser history, minute summaries and CSV/JSON export
-- Safety/event diagnostics
-- Firmware/network/heap/RSSI information
-- API contract and pin map
+---
 
-## Firmware API
-- `GET /api/status`
-- `GET /api/rpm?value=0-14000`
-- `GET /api/speed?value=0-100`
-- `GET /api/start`
-- `GET /api/stop`
-- `GET /api/emergency?value=1`
-- `GET /api/auto/start`
-- `GET /api/auto/stop`
-- `GET /api/config?peak=&step=&hold=&up=&down=&smooth=`
-- `GET /api/info`
+## Features
 
-## RPM measurement
-RPM is **not** estimated from ESC PWM. The IR sensor interrupt records pulse-to-pulse period and calculates:
+- ESP32-based BLDC/ESC control
+- PWM-based ESC control
+- Adaptive ramp control
+- Auto Peak motion profile
+- Target-speed control
+- ACS712-based current monitoring
+- Battery/system voltage monitoring
+- SSD1306 OLED telemetry
+- UP / DOWN / MODE physical controls
+- Wi-Fi connectivity
+- Browser-based dashboard
+- Real-time telemetry
+- Safety and fault handling
+- Event diagnostics
+- API endpoints for dashboard communication
+- Dashboard history and data export
 
-`RPM = 60,000,000 / pulse_period_us / pulses_per_revolution`
+---
 
-A 500 ms signal timeout drives measured RPM to zero.
+## Current Hardware
 
-## Upload
-From the directory containing `platformio.ini`:
+| Component | Specification |
+|---|---|
+| Controller | ESP32 DevKit V1 / ESP-WROOM-32 |
+| Motor | A2212 1000KV BLDC |
+| ESC | 30A ESC |
+| Current Sensor | ACS712-20A |
+| Voltage Sensor | Voltage sensor |
+| Display | SSD1306 128×64 OLED |
+| Controls | 3× tactile buttons |
+| Test Supply | Approximately 12.20 V |
+| RPM Sensor | **Not installed in current build** |
 
-```powershell
-D:\.platformio\penv\Scripts\platformio.exe run
-D:\.platformio\penv\Scripts\platformio.exe run --target upload --upload-port COM10
-D:\.platformio\penv\Scripts\platformio.exe device monitor --port COM10 --baud 115200
-```
+### Pin Configuration
 
-Open the IP printed by the ESP32 in a browser.
+| Function | GPIO |
+|---|---:|
+| ESC Signal | GPIO18 |
+| OLED SDA | GPIO21 |
+| OLED SCL | GPIO22 |
+| Current Sensor | GPIO34 |
+| Voltage Sensor | GPIO35 |
+| UP Button | GPIO25 |
+| DOWN Button | GPIO26 |
+| MODE Button | GPIO27 |
 
-## Safety
-The dashboard does not bypass firmware safety. Target RPM is clamped by `MAX_SAFE_RPM` (14,000 RPM in this source build), current protection remains active, and the final ESC pulse remains clamped to 1000–2000 µs.
+> **RPM note:** The current physical build does not contain an RPM sensor. ESC PWM is not treated as measured RPM. Physical RPM feedback requires an actual RPM sensor.
+
+---
+
+## System Architecture
+
+```text
+                 ┌─────────────────────┐
+                 │      ESP32          │
+                 │   Control Center    │
+                 └──────────┬──────────┘
+                            │
+          ┌─────────────────┼─────────────────┐
+          │                 │                 │
+          ▼                 ▼                 ▼
+     ESC / BLDC        Sensors           OLED
+      GPIO18        Current/Voltage     SSD1306
+          │                 │
+          ▼                 ▼
+      A2212 Motor       Telemetry
+                            │
+                            ▼
+                       Wi-Fi / HTTP
+                            │
+                            ▼
+                    Browser Dashboard
