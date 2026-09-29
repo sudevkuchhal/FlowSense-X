@@ -1,0 +1,13 @@
+FlowSense-X firmware patch (3 small edits)
+
+1) include/constants.h  -> fixes the compile error in web_dashboard.cpp
+   constexpr float DEFAULT_TARGET_RPM = 2000.0f;   // pick a safe START value
+
+2) scr/web_dashboard.cpp  -> lets the dashboard file read the ESP32 over WiFi
+   Inside the anonymous namespace add:
+     void cors(){ server.sendHeader("Access-Control-Allow-Origin","*"); }
+   then call cors(); as the first line of handleStatus(), handleSpeed(),
+   handleStart() and handleStop().
+
+3) Optional: also serve JSON for uptime/RSSI (WiFi.RSSI(), millis(), ESP.getFreeHeap())
+   from a new /api/info route, same pattern as handleStatus().

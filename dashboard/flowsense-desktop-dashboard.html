@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FlowSense-X Dashboard</title>
+<style>
+:root{--bg:#070b14;--p:#0f1626;--p2:#151d31;--b:#22304d;--t:#e8eefc;--m:#8093b8;--c:#38bdf8;--g:#34d399;--y:#fbbf24;--r:#f87171;--v:#a78bfa}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(1200px 600px at 80% -10%,#16244a55,transparent),var(--bg);color:var(--t);font:14px/1.45 system-ui,Segoe UI,Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:14px 20px;border-bottom:1px solid var(--b);background:#0b1120cc;position:sticky;top:0;backdrop-filter:blur(10px);z-index:5}
+.logo{font-weight:800;font-size:18px;letter-spacing:.5px}.logo b{color:var(--c)}
+.pill{padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700;border:1px solid var(--b)}
+.live{color:var(--g);border-color:#34d39966}.demo{color:var(--y);border-color:#fbbf2466}.off{color:var(--r);border-color:#f8717166}
+input,button,select{font:inherit;color:var(--t);background:var(--p2);border:1px solid var(--b);border-radius:8px;padding:6px 10px}
+button{cursor:pointer}button:hover{border-color:var(--c)}
+.sp{flex:1}nav{display:flex;gap:4px;padding:10px 20px 0}nav button{border-radius:8px 8px 0 0;border-bottom:none;color:var(--m)}nav button.on{color:var(--t);background:var(--p);border-color:var(--c)}
+main{padding:16px 20px;max-width:1300px;margin:auto}.tab{display:none}.tab.on{display:block}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
+.card{background:linear-gradient(160deg,var(--p),var(--p2));border:1px solid var(--b);border-radius:14px;padding:14px 16px}
+.k{font-size:11px;letter-spacing:1px;color:var(--m);text-transform:uppercase}.v{font-size:28px;font-weight:700;margin-top:4px}.v small{font-size:13px;color:var(--m);font-weight:500}
+.bar{height:5px;background:#1c2742;border-radius:9px;margin-top:8px;overflow:hidden}.bar i{display:block;height:100%;background:var(--c);width:0;transition:width .4s}
+h3{margin:18px 0 8px;font-size:13px;letter-spacing:1px;color:var(--m);text-transform:uppercase}
+canvas{width:100%;height:260px;display:block}.lg{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:6px}.lg label{cursor:pointer;font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{padding:6px 8px;border-bottom:1px solid var(--b);text-align:left;white-space:nowrap}th{color:var(--m);font-weight:600;position:sticky;top:0;background:var(--p)}
+.sc{max-height:340px;overflow:auto;border:1px solid var(--b);border-radius:10px}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}
+.go{background:#065f46;border-color:#10b981}.st{background:#7f1d1d;border-color:#ef4444}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:stretch}.node{flex:1;min-width:150px;background:var(--p2);border:1px solid var(--b);border-radius:12px;padding:10px}.node b{color:var(--c)}.node small{color:var(--m);display:block}.ar{align-self:center;color:var(--c);font-size:20px}
+.warn{border-left:3px solid var(--y)}.bad{border-left:3px solid var(--r)}.ok{border-left:3px solid var(--g)}
+.audit div{padding:8px 12px;margin:6px 0;background:var(--p2);border-radius:8px}code{color:var(--v)}
+</style></head><body>
+<header><div class="logo">Flow<b>Sense-X</b> <small style="color:var(--m);font-weight:500">BLDC Motion Controller</small></div>
+<span id="mode" class="pill demo">DEMO</span>
+<span class="sp"></span>
+<input id="ip" placeholder="ESP32 IP e.g. 192.168.4.1" size="20">
+<button id="conn">Connect</button><button id="demo">Demo mode</button>
+<span id="clk" style="color:var(--m);font-variant-numeric:tabular-nums"></span></header>
+<nav id="nav"><button class="on" data-t="live">Live</button><button data-t="hist">History</button><button data-t="evt">Events</button><button data-t="sys">System &amp; IoT</button></nav>
+<main>
+<section class="tab on" id="live">
+<div class="grid" id="kpi"></div>
+<div class="grid" style="margin-top:12px">
+<div class="card"><div class="k">System state</div><div class="v" id="state">—</div></div>
+<div class="card"><div class="k">Safety</div><div class="v" id="safety">—</div></div>
+<div class="card"><div class="k">Link</div><div class="v" id="link" style="font-size:18px">—</div><div class="k" id="linkd"></div></div>
+<div class="card"><div class="k">Session</div><div class="v" id="sess" style="font-size:18px">—</div><div class="k" id="sessd"></div></div></div>
+<h3>Realtime chart (last 2 min, each series scaled to its limit)</h3>
+<div class="card"><div class="lg" id="lg"></div><canvas id="ch"></canvas></div>
+<h3>Motor control (sent over WiFi)</h3>
+<div class="card"><div class="row"><input type="range" id="sl" min="0" max="100" value="0" style="flex:1;min-width:200px"><b id="slv">0%</b><span style="color:var(--m)" id="slr"></span>
+<button class="go" id="bs">START</button><button class="st" id="bx">STOP</button></div></div>
+</section>
+
+<section class="tab" id="hist">
+<div class="row"><button id="csvm">Export minutes CSV</button><button id="csvr">Export raw CSV</button><button id="jsn">Export JSON</button><button id="clr">Clear history</button><span id="hinfo" style="color:var(--m)"></span></div>
+<h3>Minute-by-minute summary</h3><div class="sc"><table id="tm"></table></div>
+<h3>Latest raw samples (every reading)</h3><div class="sc"><table id="tr"></table></div>
+</section>
+
+<section class="tab" id="evt"><div class="row"><button id="cev">Clear events</button></div><div class="sc"><table id="te"></table></div></section>
+
+<section class="tab" id="sys">
+<h3>Data path: sensor → ESP32 → WiFi → app</h3>
+<div class="flow">
+<div class="node"><b>Sensors</b><small>ACS712-20A → GPIO34 (current)<br>25 V module → GPIO35 (voltage)<br>IR reflective → GPIO33 (RPM, not read yet)</small></div><div class="ar">→</div>
+<div class="node"><b>Control loop · 50 ms</b><small>Target → S-curve motion → adaptive ramp → safety → events → ESC 1000–2000 µs on GPIO18</small></div><div class="ar">→</div>
+<div class="node"><b>WiFi manager</b><small>STA join “BLDC” (10 s timeout) else SoftAP “FlowSense-X” → 192.168.4.1</small></div><div class="ar">→</div>
+<div class="node"><b>HTTP server :80</b><small>REST/JSON, GET only. Page polls <code>/api/status</code> every 500 ms</small></div><div class="ar">→</div>
+<div class="node"><b>This dashboard</b><small>Stores history in the browser (localStorage), exports CSV/JSON</small></div></div>
+<h3>REST API in firmware (web_dashboard.cpp)</h3>
+<div class="sc"><table><tr><th>Endpoint</th><th>Purpose</th></tr>
+<tr><td><code>GET /</code></td><td>Built-in basic dashboard page</td></tr>
+<tr><td><code>GET /api/status</code></td><td>voltage, current, rpm, target, command, esc, state, safety (JSON)</td></tr>
+<tr><td><code>GET /api/speed?value=0-100</code></td><td>% of 14000 RPM → target RPM</td></tr>
+<tr><td><code>GET /api/start</code></td><td>Sets target to DEFAULT_TARGET_RPM</td></tr>
+<tr><td><code>GET /api/stop</code></td><td>Target 0, escStop(), ESC 1000 µs</td></tr></table></div>
+<h3>Pin map · ESP32 DevKit V1</h3>
+<div class="sc"><table id="pins"></table></div>
+<h3>Limits &amp; timing (constants.h)</h3>
+<div class="sc"><table id="lim"></table></div>
+<h3>Firmware audit (what I found in your zip)</h3>
+<div class="audit" id="aud"></div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id),LIM={rpm:14000,cur:20,vol:13};
+const KP=[['voltage','Battery voltage','V',2,13,'--y'],['current','Motor current','A',2,20,'--r'],['rpm','Measured RPM','',0,14000,'--g'],['target','Target RPM','',0,14000,'--c'],['command','Command RPM','',0,14000,'--v'],['esc','ESC pulse','µs',0,2000,'--c'],['power','Power','W',1,250,'--y'],['thr','Throttle','%',0,100,'--g']];
+const SER=[['rpm','RPM','#34d399',d=>d.rpm/14000],['current','Current','#f87171',d=>d.current/20],['voltage','Voltage','#fbbf24',d=>d.voltage/13],['esc','ESC µs','#38bdf8',d=>(d.esc-1000)/1000],['target','Target','#a78bfa',d=>d.target/14000]];
+const on={};SER.forEach(s=>on[s[0]]=true);
+let S={mode:'demo',base:'',raw:[],mins:{},ev:[],last:null,fails:0,t0:Date.now(),sim:{rpm:0,cur:0,tgt:0,esc:1000,run:false},prev:{}};
+try{S.mins=JSON.parse(localStorage.getItem('fsx_m')||'{}');S.ev=JSON.parse(localStorage.getItem('fsx_e')||'[]');$('ip').value=localStorage.getItem('fsx_ip')||''}catch(e){}
+if(location.protocol.startsWith('http')&&!$('ip').value&&!location.host.includes('claude'))$('ip').value=location.host;
+const f2=n=>String(n).padStart(2,'0'),hms=t=>{const d=new Date(t);return f2(d.getHours())+':'+f2(d.getMinutes())+':'+f2(d.getSeconds())};
+const dur=s=>{s=Math.floor(s/1e3);return f2(s/3600|0)+':'+f2(s/60%60|0)+':'+f2(s%60)};
+$('kpi').innerHTML=KP.map(k=>`<div class="card"><div class="k">${k[1]}</div><div class="v"><span id="k_${k[0]}">0</span> <small>${k[2]}</small></div><div class="bar"><i id="b_${k[0]}" style="background:var(${k[5]})"></i></div></div>`).join('');
+$('lg').innerHTML=SER.map(s=>`<label><input type="checkbox" checked data-s="${s[0]}"> <span style="color:${s[2]}">●</span> ${s[1]}</label>`).join('');
+$('lg').onchange=e=>{on[e.target.dataset.s]=e.target.checked};
+document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#nav button,.tab').forEach(x=>x.classList.remove('on'));b.classList.add('on');$(b.dataset.t).classList.add('on');render()});
+function ev(type,msg){const e={t:Date.now(),type,msg};S.ev.unshift(e);S.ev=S.ev.slice(0,500);try{localStorage.setItem('fsx_e',JSON.stringify(S.ev))}catch(x){}}
+function setMode(m){S.mode=m;const p=$('mode');p.className='pill '+(m=='live'?'live':m=='demo'?'demo':'off');p.textContent=m=='live'?'LIVE · WiFi':m=='demo'?'DEMO':'OFFLINE'}
+$('conn').onclick=()=>{let v=$('ip').value.trim().replace(/^https?:\/\//,'').replace(/\/$/,'');if(!v)return alert('Enter the ESP32 IP shown in the serial monitor (STA) or 192.168.4.1 (AP mode).');S.base='http://'+v;try{localStorage.setItem('fsx_ip',v)}catch(e){}S.fails=0;setMode('live');ev('LINK','Connecting to '+S.base)};
+$('demo').onclick=()=>{setMode('demo');ev('LINK','Demo mode (simulated data)')};
+async function api(p,ms=1500){const c=new AbortController(),t=setTimeout(()=>c.abort(),ms);try{const r=await fetch(S.base+p,{signal:c.signal,cache:'no-store'});return r}finally{clearTimeout(t)}}
+async function send(p){if(S.mode=='live'){try{await api(p)}catch(e){ev('ERROR','Command failed: '+p)}}else simCmd(p)}
+$('sl').oninput=e=>{const v=+e.target.value;$('slv').textContent=v+'%';$('slr').textContent='= '+Math.round(v*140)+' RPM';clearTimeout(S.st);S.st=setTimeout(()=>send('/api/speed?value='+v),120);ev('CMD','Speed set '+v+'%')};
+$('bs').onclick=()=>{send('/api/start');ev('CMD','START')};
+$('bx').onclick=()=>{$('sl').value=0;$('slv').textContent='0%';send('/api/stop');ev('CMD','STOP')};
+function simCmd(p){const s=S.sim;if(p.includes('speed'))s.tgt=+p.split('=')[1]*140;else if(p.includes('start'))s.tgt=2000;else if(p.includes('stop'))s.tgt=0}
+function simTick(){const s=S.sim,dt=.5;const d=s.tgt-s.rpm;s.rpm+=Math.sign(d)*Math.min(Math.abs(d),(d>0?1100:2200)*dt);if(s.tgt==0&&s.rpm<60)s.rpm=0;
+const noise=()=>(Math.random()-.5);const cur=s.rpm?0.4+Math.pow(s.rpm/14000,1.6)*15+(d>0?d/1200:0)+noise()*.3:0;const esc=s.rpm?Math.round(1000+Math.min(1000,s.rpm/14000*900+60)):1000;
+const v=12.4-cur*.06+noise()*.03;const st=cur>=12?'WARNING':s.rpm>0?'RUNNING':'IDLE';
+return{voltage:v,current:Math.max(0,cur),rpm:s.rpm,target:s.tgt,command:Math.max(0,s.rpm+d*.2),esc,state:st,safety:'SAFE'}}
+async function tick(){let d=null;
+if(S.mode=='demo')d=simTick();
+else if(S.mode=='live'){try{const r=await api('/api/status');d=await r.json();if(S.fails>=3)ev('LINK','WiFi link restored');S.fails=0}catch(e){if(++S.fails==3){ev('ERROR','WiFi link lost / no reply from '+S.base+' (CORS or IP?)');setMode('off')}}}
+else if(S.base){try{const r=await api('/api/status');d=await r.json();setMode('live');ev('LINK','WiFi link restored')}catch(e){}}
+if(d)ingest(d)}
+function ingest(d){const t=Date.now();d={t,voltage:+d.voltage,current:+d.current,rpm:+d.rpm,target:+d.target,command:+d.command,esc:+d.esc,state:d.state,safety:d.safety};
+d.power=d.voltage*d.current;d.thr=Math.max(0,(d.esc-1000)/10);S.last=d;S.raw.push(d);if(S.raw.length>7200)S.raw.shift();
+const k=Math.floor(t/6e4)*6e4,m=S.mins[k]||(S.mins[k]={t:k,n:0,src:S.mode,v:[0,99,0],a:[0,99,0],r:[0,99,0],w:0,e:0,st:{},bl:0});
+m.n++;[['v',d.voltage],['a',d.current],['r',d.rpm]].forEach(([x,val])=>{m[x][0]+=val;m[x][1]=Math.min(m[x][1],val);m[x][2]=Math.max(m[x][2],val)});m.w+=d.power*.5/3600;m.st[d.state]=(m.st[d.state]||0)+1;if(d.safety!='SAFE')m.bl++;
+if(S.prev.state!==undefined&&(S.prev.state!=d.state))ev(d.state=='WARNING'||d.state=='FAULT'||d.state=='EMERGENCY'?'ALERT':'STATE',S.prev.state+' → '+d.state+' @ '+Math.round(d.rpm)+' RPM, '+d.current.toFixed(1)+' A');
+if(S.prev.safety!==undefined&&S.prev.safety!=d.safety)ev('ALERT','Safety '+d.safety);S.prev={state:d.state,safety:d.safety};
+if(!(S.raw.length%10)){const ks=Object.keys(S.mins).sort();while(ks.length>1440)delete S.mins[ks.shift()];try{localStorage.setItem('fsx_m',JSON.stringify(S.mins))}catch(e){}}
+render()}
+function render(){const d=S.last;if(!d)return;
+KP.forEach(k=>{const v=d[k[0]];$('k_'+k[0]).textContent=(+v).toFixed(k[3]);$('b_'+k[0]).style.width=Math.min(100,Math.max(0,v/k[4]*100))+'%'});
+const st=$('state');st.textContent=d.state;st.style.color=d.state=='RUNNING'?'var(--g)':d.state=='IDLE'?'var(--c)':'var(--r)';
+const sf=$('safety');sf.textContent=d.safety;sf.style.color=d.safety=='SAFE'?'var(--g)':'var(--r)';
+$('link').textContent=S.mode=='live'?S.base.replace('http://',''):S.mode=='demo'?'Simulator':'No reply';$('linkd').textContent=S.mode=='live'?'polling /api/status · 500 ms':'';
+$('sess').textContent=dur(Date.now()-S.t0);$('sessd').textContent=S.raw.length+' samples this session';
+const a=document.querySelector('.tab.on').id;if(a=='hist')hist();if(a=='evt')evts();chart()}
+function chart(){const c=$('ch'),r=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*r;c.height=h*r;const x=c.getContext('2d');x.scale(r,r);
+x.strokeStyle='#22304d';x.fillStyle='#8093b8';x.font='11px system-ui';for(let i=0;i<=4;i++){const y=10+(h-30)*i/4;x.beginPath();x.moveTo(30,y);x.lineTo(w,y);x.stroke();x.fillText(100-i*25+'%',0,y+4)}
+const pts=S.raw.slice(-240);if(pts.length<2)return;
+SER.forEach(s=>{if(!on[s[0]])return;x.strokeStyle=s[2];x.lineWidth=2;x.beginPath();pts.forEach((p,i)=>{const X=30+(w-34)*i/239,Y=10+(h-30)*(1-Math.max(0,Math.min(1,s[3](p))));i?x.lineTo(X,Y):x.moveTo(X,Y)});x.stroke()});
+x.fillStyle='#8093b8';x.fillText(hms(pts[0].t),30,h-4);x.fillText(hms(pts[pts.length-1].t),w-52,h-4)}
+function hist(){const ks=Object.keys(S.mins).sort().reverse();$('hinfo').textContent=ks.length+' minutes stored · '+S.raw.length+' raw samples in memory';
+$('tm').innerHTML='<tr><th>Minute</th><th>Samples</th><th>V avg</th><th>V min</th><th>A avg</th><th>A max</th><th>RPM avg</th><th>RPM max</th><th>Energy Wh</th><th>States</th><th>Blocked</th><th>Src</th></tr>'+ks.slice(0,180).map(k=>{const m=S.mins[k],n=m.n;return`<tr><td>${new Date(m.t).toLocaleString()}</td><td>${n}</td><td>${(m.v[0]/n).toFixed(2)}</td><td>${m.v[1].toFixed(2)}</td><td>${(m.a[0]/n).toFixed(2)}</td><td>${m.a[2].toFixed(2)}</td><td>${Math.round(m.r[0]/n)}</td><td>${Math.round(m.r[2])}</td><td>${m.w.toFixed(4)}</td><td>${Object.entries(m.st).map(e=>e[0]+':'+e[1]).join(' ')}</td><td>${m.bl}</td><td>${m.src}</td></tr>`}).join('');
+$('tr').innerHTML='<tr><th>Time</th><th>V</th><th>A</th><th>W</th><th>RPM</th><th>Target</th><th>Command</th><th>ESC µs</th><th>State</th><th>Safety</th></tr>'+S.raw.slice(-100).reverse().map(d=>`<tr><td>${hms(d.t)}</td><td>${d.voltage.toFixed(2)}</td><td>${d.current.toFixed(2)}</td><td>${d.power.toFixed(1)}</td><td>${Math.round(d.rpm)}</td><td>${Math.round(d.target)}</td><td>${Math.round(d.command)}</td><td>${d.esc}</td><td>${d.state}</td><td>${d.safety}</td></tr>`).join('')}
+function evts(){$('te').innerHTML='<tr><th>Time</th><th>Type</th><th>Message</th></tr>'+S.ev.map(e=>`<tr><td>${new Date(e.t).toLocaleString()}</td><td style="color:${e.type=='ALERT'||e.type=='ERROR'?'var(--r)':e.type=='CMD'?'var(--y)':'var(--c)'}">${e.type}</td><td>${e.msg}</td></tr>`).join('')}
+function dl(name,txt,mime){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:mime}));a.download=name;a.click()}
+$('csvm').onclick=()=>dl('flowsense_minutes.csv','minute,samples,v_avg,v_min,a_avg,a_max,rpm_avg,rpm_max,wh,blocked,source\n'+Object.values(S.mins).map(m=>[new Date(m.t).toISOString(),m.n,(m.v[0]/m.n).toFixed(3),m.v[1].toFixed(3),(m.a[0]/m.n).toFixed(3),m.a[2].toFixed(3),Math.round(m.r[0]/m.n),Math.round(m.r[2]),m.w.toFixed(5),m.bl,m.src].join(',')).join('\n'),'text/csv');
+$('csvr').onclick=()=>dl('flowsense_raw.csv','time,voltage,current,power,rpm,target,command,esc_us,state,safety\n'+S.raw.map(d=>[new Date(d.t).toISOString(),d.voltage.toFixed(3),d.current.toFixed(3),d.power.toFixed(2),Math.round(d.rpm),Math.round(d.target),Math.round(d.command),d.esc,d.state,d.safety].join(',')).join('\n'),'text/csv');
+$('jsn').onclick=()=>dl('flowsense_export.json',JSON.stringify({minutes:S.mins,events:S.ev,raw:S.raw},null,1),'application/json');
+$('clr').onclick=()=>{if(confirm('Delete stored history?')){S.mins={};S.raw=[];try{localStorage.removeItem('fsx_m')}catch(e){}hist()}};
+$('cev').onclick=()=>{S.ev=[];try{localStorage.removeItem('fsx_e')}catch(e){}evts()};
+const tbl=(id,h,rows)=>$(id).innerHTML=`<tr>${h.map(x=>'<th>'+x+'</th>').join('')}</tr>`+rows.map(r=>'<tr>'+r.map(x=>'<td>'+x+'</td>').join('')+'</tr>').join('');
+tbl('pins',['Signal','GPIO','Notes'],[['OLED SDA / SCL','21 / 22','SSD1306 128×64, I²C 0x3C'],['ESC signal','18','PWM 1000–2000 µs, arm 3 s'],['IR RPM sensor','33','1 mark = 1 rev (module exists, not called in main)'],['ACS712-20A current','34','100 mV/A, 10k/20k divider, 500-sample zero cal'],['Voltage sensor','35','0–25 V module, ratio 5'],['Buttons UP / DOWN / MODE','25 / 26 / 27','INPUT_PULLUP, 50 ms debounce'],['Buzzer','19','2 kHz warn, 3 kHz error']]);
+tbl('lim',['Item','Value'],[['Max / safe RPM','14000 (step 500), motor 1000 KV'],['Current warning / cutoff','12 A / 18 A'],['Battery min / warn / nominal / max','9.0 / 10.5 / 11.1 / 12.6 V (3S)'],['Throttle ramp up / down','10 % s⁻¹ / 20 % s⁻¹'],['Control loop','50 ms'],['Logger (serial CSV)','1 s'],['OLED refresh / web poll','250 ms / 500 ms'],['Faults','OverCurrent, OverSpeed, SensorFault, InvalidCommand, EmergencyStop']]);
+$('aud').innerHTML=[['bad','Build error: <code>DEFAULT_TARGET_RPM</code> is used in web_dashboard.cpp (handleStart) but never defined — constants.h only has DEFAULT_START_TARGET_RPM. Your .pio build folder confirms it: web_dashboard.cpp.d exists but there is no .o file.'],
+['bad','No CORS headers: a dashboard opened from your PC/phone cannot read the ESP32 until <code>Access-Control-Allow-Origin: *</code> is sent (see firmware_patch.txt). Serving the page from the ESP32 itself avoids this.'],
+['warn','No history, file storage or file transfer in firmware: the logger only prints CSV to Serial (115200). No SPIFFS/LittleFS, SD, OTA or MQTT. History on this page is built in your browser from the 500 ms polling.'],
+['warn','Measured RPM is forced to 0 in main.cpp (no IR sensor installed) although rpm_sensor.cpp exists. Fault code, ESC request and motor limit values are not in /api/status, so Events here are derived from state changes.'],
+['warn','WiFi SSID/password are hard-coded in config.h; wifiUpdate() has no auto-reconnect; all control endpoints are unauthenticated GET requests — anyone on the network can start the motor.'],
+['ok','Good design: STA first, SoftAP fallback; layered safety (motion → adaptive ramp → safety → events → ESC); ESC forced to 1000 µs on Fault/E-stop; over-current 18 A and over-speed cutoffs.']].map(a=>`<div class="${a[0]}">${a[1]}</div>`).join('');
+setInterval(()=>{$('clk').textContent=new Date().toLocaleString()},1000);
+setInterval(tick,500);ev('LINK','Dashboard started');tick();
+if($('ip').value&&location.protocol.startsWith('http')&&!location.host.includes('claude')){$('conn').click()}
+addEventListener('resize',chart);
+</script></body></html>
