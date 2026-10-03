@@ -96,6 +96,108 @@ The system combines **closed-loop-ready motion control architecture, adaptive ac
 
 ---
 
+[existing diagram]
+
+---
+
+## Engineering Architecture & Data Flow
+
+---
+
+## Engineering Architecture & Data Flow
+
+FlowSense-X is organized as a layered embedded control system in which
+user commands, motion control, sensor telemetry, safety decisions, and
+remote monitoring are processed through the ESP32 control core.
+
+```text
+                         ┌──────────────────────────┐
+                         │       USER INPUT         │
+                         │                          │
+                         │ UP / DOWN / MODE         │
+                         │ Browser Control          │
+                         └────────────┬─────────────┘
+                                      │
+                                      ▼
+                         ┌──────────────────────────┐
+                         │     MOTION MANAGER       │
+                         │                          │
+                         │ Target Motion            │
+                         │ Motion Profile           │
+                         │ Auto Peak                │
+                         └────────────┬─────────────┘
+                                      │
+                                      ▼
+                         ┌──────────────────────────┐
+                         │     ADAPTIVE RAMP        │
+                         │                          │
+                         │ Acceleration             │
+                         │ Deceleration             │
+                         │ Command Smoothing        │
+                         └────────────┬─────────────┘
+                                      │
+                                      ▼
+                         ┌──────────────────────────┐
+                         │     SAFETY MANAGER       │
+                         │                          │
+                         │ Sensor Validity          │
+                         │ Fault Conditions         │
+                         │ Emergency Stop           │
+                         └────────────┬─────────────┘
+                                      │
+                             Safe Command
+                                      │
+                                      ▼
+                         ┌──────────────────────────┐
+                         │       ESC DRIVER         │
+                         │                          │
+                         │ 50 Hz PWM                │
+                         │ Pulse Width Control      │
+                         └────────────┬─────────────┘
+                                      │
+                                      ▼
+                         ┌──────────────────────────┐
+                         │     30A ESC + A2212      │
+                         │        BLDC MOTOR        │
+                         └──────────────────────────┘
+
+
+      ┌────────────────────────────────────────────────────┐
+      │                 SENSOR / TELEMETRY                 │
+      │                                                    │
+      │   ACS712          Voltage Sensor       System      │
+      │      │                  │              State       │
+      │      └──────────────────┼────────────────┘         │
+      │                         ▼                          │
+      │                ┌──────────────────┐                │
+      │                │  ESP32 Telemetry │                │
+      │                │     Engine       │                │
+      │                └────────┬─────────┘                │
+      │                         │                          │
+      └─────────────────────────┼──────────────────────────┘
+                                │
+                    ┌───────────┴────────────┐
+                    │                        │
+                    ▼                        ▼
+             ┌──────────────┐       ┌─────────────────┐
+             │ SSD1306 OLED │       │  Wi-Fi / HTTP   │
+             │ Local Status │       │ Communication   │
+             └──────────────┘       └────────┬────────┘
+                                             │
+                                             ▼
+                                    ┌──────────────────┐
+                                    │ Browser          │
+                                    │ Dashboard        │
+                                    │                  │
+                                    │ Live Telemetry   │
+                                    │ History          │
+                                    │ Events           │
+                                    │ Data Export      │
+                                    └──────────────────┘
+
+---
+
+
 ## Hardware
 
 | Component       | Specification                  |
