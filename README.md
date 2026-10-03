@@ -435,8 +435,8 @@ Testing & Validation
 | Wi-Fi Connectivity      | Implemented                        |
 | Web Dashboard           | Implemented                        |
 | Safety Handling         | Implemented                        |
-| RPM Sensor              | **Not installed**                  |
-| Physical RPM Feedback   | **Not available in current build** |
+| RPM Sensor              | **installed**                      |
+| Physical RPM Feedback   | **available in current build**     |
 
 ---
 
