@@ -230,18 +230,18 @@ The SSD1306 OLED provides local system information without requiring a computer.
 Typical information includes:
 
 ```text
-┌────────────────────────┐
-│     FLOWSENSE-X        │
-├────────────────────────┤
-│ MODE: AUTO PEAK        │
+┌─────────────────────────┐
+│     FLOWSENSE-X         │
+├─────────────────────────┤
+│ MODE: AUTO PEAK         │
 │ STATE: READY            │
 │ PWM: 1200 us            │
 │ VOLT: XX.XX V           │
 │ CURR: XX.XX A           │
-├────────────────────────┤
+├─────────────────────────┤
 │ UP/DN: CONTROL          │
 │ MODE: SELECT            │
-└────────────────────────┘
+└─────────────────────────┘
 ```
 
 The exact displayed fields depend on the active firmware configuration.
