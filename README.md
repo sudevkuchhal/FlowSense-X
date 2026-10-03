@@ -96,13 +96,7 @@ The system combines **closed-loop-ready motion control architecture, adaptive ac
 
 ---
 
-[existing diagram]
 
----
-
-## Engineering Architecture & Data Flow
-
----
 
 ## Engineering Architecture & Data Flow
 
